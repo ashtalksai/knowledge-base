@@ -9,11 +9,15 @@
  *   kb get <id>
  *   kb tag <id> <tag>
  *   kb delete <id>
+ *   kb ingest [--dir path] [--file path]
+ *   kb tags
  */
 
 import 'dotenv/config';
+import * as fs from 'fs';
+import * as path from 'path';
 
-const API_URL = process.env.KB_API_URL || 'http://localhost:3000/api/knowledge';
+const API_URL = process.env.KB_API_URL || 'https://knowledge.ashketing.com/api/knowledge';
 const API_KEY = process.env.KB_API_KEY || '';
 
 interface Entry {
@@ -85,7 +89,7 @@ async function add(args: string[]): Promise<void> {
   }
   
   if (!options.title || !options.content) {
-    console.error('Usage: kb add --title "..." --content "..." --source <type> [--tags tag1,tag2]');
+    console.error('Usage: kb add --title "..." --content "..." --source <type> [--tags tag1,tag2] [--author @handle]');
     process.exit(1);
   }
   
@@ -232,6 +236,86 @@ async function tags(): Promise<void> {
   }
 }
 
+async function ingest(args: string[]): Promise<void> {
+  const options: Record<string, string> = {};
+  
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].startsWith('--')) {
+      const key = args[i].substring(2);
+      options[key] = args[++i] || '';
+    }
+  }
+  
+  const files: string[] = [];
+  
+  if (options.file) {
+    // Single file
+    files.push(options.file);
+  } else if (options.dir) {
+    // Directory of markdown files
+    const dirPath = options.dir.replace(/^~/, process.env.HOME || '');
+    const entries = fs.readdirSync(dirPath);
+    for (const entry of entries) {
+      if (entry.endsWith('.md')) {
+        files.push(path.join(dirPath, entry));
+      }
+    }
+  } else {
+    // Default: ~/clawd/memory/learnings/
+    const defaultDir = path.join(process.env.HOME || '', 'clawd/memory/learnings');
+    if (fs.existsSync(defaultDir)) {
+      const entries = fs.readdirSync(defaultDir);
+      for (const entry of entries) {
+        if (entry.endsWith('.md')) {
+          files.push(path.join(defaultDir, entry));
+        }
+      }
+    } else {
+      console.error('Usage: kb ingest --dir <path> OR kb ingest --file <path>');
+      console.error('Default directory ~/clawd/memory/learnings/ not found.');
+      process.exit(1);
+    }
+  }
+  
+  if (files.length === 0) {
+    console.log('No markdown files found to ingest.');
+    return;
+  }
+  
+  console.log(`Found ${files.length} file(s) to ingest...\n`);
+  
+  let totalCreated = 0;
+  let totalSkipped = 0;
+  
+  for (const filePath of files) {
+    const filename = path.basename(filePath);
+    const markdown = fs.readFileSync(filePath, 'utf-8');
+    
+    console.log(`Processing ${filename}...`);
+    
+    try {
+      const result = await api('/ingest', {
+        method: 'POST',
+        body: JSON.stringify({ markdown, filename }),
+      });
+      
+      console.log(`  ✓ Created: ${result.created}, Skipped: ${result.skipped}`);
+      totalCreated += result.created;
+      totalSkipped += result.skipped;
+      
+      if (result.errors && result.errors.length > 0) {
+        for (const err of result.errors) {
+          console.log(`  ⚠ ${err.title}: ${err.error}`);
+        }
+      }
+    } catch (error: any) {
+      console.log(`  ✗ Error: ${error.message}`);
+    }
+  }
+  
+  console.log(`\n✓ Ingestion complete: ${totalCreated} created, ${totalSkipped} skipped`);
+}
+
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
   
@@ -246,12 +330,21 @@ Commands:
   tag     Add tag to entry
   delete  Delete an entry
   tags    List all tags
+  ingest  Ingest markdown files from memory/learnings/
 
 Examples:
   kb add --title "Meeting Notes" --content "Key takeaway..." --source manual --tags work
+  kb add --title "AI Insight" --content "..." --source twitter --author @elonmusk --tags ai
   kb search "machine learning papers"
   kb list --limit 10 --source twitter
   kb tag <entry-id> important
+  kb ingest                           # Ingest from ~/clawd/memory/learnings/
+  kb ingest --dir /path/to/learnings  # Ingest from specific directory
+  kb ingest --file /path/to/file.md   # Ingest single file
+
+Environment:
+  KB_API_URL  API base URL (default: https://knowledge.ashketing.com/api/knowledge)
+  KB_API_KEY  API key for authentication
 `);
     return;
   }
@@ -278,6 +371,9 @@ Examples:
         break;
       case 'tags':
         await tags();
+        break;
+      case 'ingest':
+        await ingest(args);
         break;
       default:
         console.error(`Unknown command: ${command}`);
