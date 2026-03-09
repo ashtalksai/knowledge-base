@@ -2,11 +2,15 @@ import { query, queryOne } from './db';
 import { KnowledgeEntry, Tag, CreateEntryInput, UpdateEntryInput, ListEntriesParams, SearchResult } from './types';
 import OpenAI from 'openai';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let _openai: OpenAI;
+function getOpenAI() {
+  if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return _openai;
+}
 
 // Generate embedding for text
 async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await openai.embeddings.create({
+  const response = await getOpenAI().embeddings.create({
     model: 'text-embedding-3-small',
     input: text.substring(0, 8000), // Truncate to fit model limits
   });
@@ -15,7 +19,7 @@ async function generateEmbedding(text: string): Promise<number[]> {
 
 // Generate summary for content
 async function generateSummary(title: string, content: string): Promise<string> {
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAI().chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [
       {
