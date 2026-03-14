@@ -138,6 +138,17 @@ export async function POST(request: NextRequest) {
         }
       }
       
+      // If nothing was created and there were errors, fail loudly
+      if (created.length === 0 && skipped.length > 0) {
+        return NextResponse.json({
+          success: false,
+          created: 0,
+          skipped: skipped.length,
+          entries: [],
+          errors: skipped,
+        }, { status: 500 });
+      }
+
       return NextResponse.json({
         success: true,
         created: created.length,
@@ -169,6 +180,17 @@ export async function POST(request: NextRequest) {
         }
       }
       
+      // If nothing was created and there were errors, fail loudly
+      if (created.length === 0 && skipped.length > 0) {
+        return NextResponse.json({
+          success: false,
+          created: 0,
+          skipped: skipped.length,
+          entries: [],
+          errors: skipped,
+        }, { status: 500 });
+      }
+
       return NextResponse.json({
         success: true,
         created: created.length,
